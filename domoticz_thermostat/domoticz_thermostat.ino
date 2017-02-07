@@ -28,7 +28,6 @@
 #define MINUS_PIN D8
 #define PIN_RELAY D2
 
-
 #define BUTTON_TIMEOUT 3000
 #define BUTTON_DEBOUNCE 50
 #define RESET_DEBOUNCE 1000
@@ -247,7 +246,7 @@ unsigned long lastSensorSendTime = 0;
 float getSetPoint() {
   Serial.println("Fetching SetPoint in Domoticz database...");
   WiFiClient client;
-  client.flush();
+  client.setNoDelay(true);
   client.stop();
   //Serial.print("Connectiong Client...");
   if (!client.connect(DOMOTICZ_IP_ADDRESS, DOMOTICZ_PORT)) {
@@ -306,6 +305,7 @@ float getSetPoint() {
 
 bool pushSetPoint() {
   WiFiClient client;
+  client.setNoDelay(true);
   Serial.println("Pushing setPoint...");
   if (!client.connect(DOMOTICZ_IP_ADDRESS, DOMOTICZ_PORT)) {
     Serial.println("Fail to contact server");
@@ -331,6 +331,7 @@ bool pushSetPoint() {
 
 bool pushTemperature() {
   WiFiClient client;
+  client.setNoDelay(true);
   Serial.println("Pushing Temperature...");
   if (!client.connect(DOMOTICZ_IP_ADDRESS, DOMOTICZ_PORT)) {
     Serial.println("Fail to contact server");
@@ -356,6 +357,7 @@ bool pushTemperature() {
 
 bool pushHeaterStatus() {
   WiFiClient client;
+  client.setNoDelay(true);
   Serial.println("Pushing Heater status...");
   if (!client.connect(DOMOTICZ_IP_ADDRESS, DOMOTICZ_PORT)) {
     Serial.println("Fail to contact server");
@@ -710,7 +712,6 @@ void loop() {
             client.println("HTTP/1.1 200 OK");
             client.println("Content-Type: text/html");
             client.println("Connection: keep-alive");  // the connection will be closed after completion of the response
-            //client.println("Refresh: 5");  // refresh the page automatically every 5 sec
             client.println();
             client.println("<!DOCTYPE HTML>");
             client.println("<html>");
@@ -783,18 +784,15 @@ void loop() {
                 Serial.println("GET request type");
                 if(checkHttpRequestParam(request, "ping")) {
                     html_response += "Toggling setpoint fetch, handle thermostat and pushHeaterStatus<br>";
-                    SETPOINT = getSetPoint();
-            handleThermostat();
-            pushHeaterStatus();
-            oledPushTemps(TEMPERATURE, SETPOINT);
-            oledDrawTimeToNextSend();
                 }
                 if(checkHttpRequestParam(request, "whoAreYou")) {
                     html_response += "<br>I am a domoticz thermostat<br>";
                     html_response += "Current data :<br>Server IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + "<br>";
                     html_response += "<br>Server port : " + String(DOMOTICZ_PORT) + "<br>";
                     html_response += "<br>Sensor timeout : " + String(SENSOR_TIMEOUT) + "<br>";
-                    html_response += "<br>Temperature:" + String(TEMPERATURE) + "°C<br>";
+                    html_response += "<br>Temperature:" + String(TEMPERATURE) + "C<br>";
+                    html_response += "<br>Setpoint:" + String(SETPOINT) + "C<br>";
+                    html_response += "<br>Heater Status:" + String(heating) + "C<br>";
                     html_response += "<br>RSSI : " + String(getSsidQuality()) + "%<br>";
                 }
             }
@@ -805,8 +803,13 @@ void loop() {
             client.flush();
             client.stop();
             Serial.println("Client disonnected");
-            delay(1);
-        } 
+            delay(500);
+            SETPOINT = getSetPoint();
+            handleThermostat();
+            pushHeaterStatus();
+            oledPushTemps(TEMPERATURE, SETPOINT);
+            oledDrawTimeToNextSend();
+        }
 
         
         else if (isIntervalElapsed(SENSOR_TIMEOUT_MS, lastSensorSendTime)) {

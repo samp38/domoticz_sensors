@@ -108,7 +108,8 @@ unsigned long lastSensorSendTime = 0;
 
 bool pushTemperature() {
   WiFiClient client;
-  Serial.println("Pushing setPoint...");
+  client.setNoDelay(true);
+  Serial.println("Pushing temperature...");
   if (!client.connect(DOMOTICZ_IP_ADDRESS, DOMOTICZ_PORT)) {
     Serial.println("Fail to contact server");
     client.stop();
@@ -341,21 +342,32 @@ void loop() {
                 client.print("Request Error : variable to set unknown<br>");
                 Serial.println("Request Error : variable to set unknown");
             }
-        }                        
+        }
+        else if(checkHttpRequestParam(request, "GET")) {
+                Serial.println("GET request type");
+                if(checkHttpRequestParam(request, "ping")) {
+                    client.print("Toggling temperature data transfer to server<br>");
+                }
+                if(checkHttpRequestParam(request, "whoAreYou")) {
+                    client.print("<br>I am a Domoticz temperature sensor<br>");
+                    client.print("Current data :<br>Server IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + "<br>");
+                    client.print("<br>Server port : " + String(DOMOTICZ_PORT) + "<br>");
+                    client.print("<br>Sensor timeout : " + String(SENSOR_TIMEOUT) + "<br>");
+                    client.print("<br>Temperature:" + String(TEMPERATURE) + "C<br>");
+                    client.print("<br>RSSI : " + String(getSsidQuality()) + "%<br>");
+                }
+            }                 
         // Send variables and respond to client
         getSensorValues();
-        client.print("Current data :<br>Server IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + "<br>");
-        client.print("<br>Server port : " + String(DOMOTICZ_PORT) + "<br>");
-        client.print("<br>Sensor timeout : " + String(SENSOR_TIMEOUT) + "<br>");
-        client.print("<br>Temperature:" + String(TEMPERATURE) + "°C<br>");
-        client.print("<br>RSSI : " + String(getSsidQuality()) + "%<br>");
         client.print("\n</html>\n");
         client.println();
         client.println();
         client.stop();
         Serial.println("Client disonnected");
+        delay(10);
+        pushTemperature();
         lastSensorSendTime = millis();
-    } 
+    }
 
     
     else if (isIntervalElapsed(SENSOR_TIMEOUT_MS, lastSensorSendTime)) {
