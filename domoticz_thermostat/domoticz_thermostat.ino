@@ -710,15 +710,13 @@ void loop() {
             request.remove(rawRequest.indexOf("HTTP/1.1"));
             Serial.println("New Client Request : " + request);
             IPAddress remote = client.remoteIP();
-            client.flush();
             // send a standard http response header
-            client.println("HTTP/1.1 200 OK");
-            client.println("Content-Type: text/html");
-            client.println("Connection: close");  // the connection will be closed after completion of the response
+            String html_response = ("HTTP/1.1 200 OK ");
+            html_response += ("Content-Type: text/html");
+            html_response += ("Connection: close");  // the connection will be closed after completion of the response
             client.println();
-            client.println("<!DOCTYPE HTML>");
-            client.println("<html>");
-            String html_response = "";
+            html_response += ("<!DOCTYPE HTML>");
+            html_response += ("<html>");
             // Check method
             // If post, set variables
             if(checkHttpRequestParam(request, "POST")) {
@@ -749,7 +747,6 @@ void loop() {
                     String port = getHttpRequestParamValue(request, "setServerPort");
                     DOMOTICZ_PORT = port.toInt();
                     faltyRequest = false;                 
-                    DOMOTICZ_IP_ADDRESS_STR = String(remote[0]) + "." + String(remote[1]) + "." + String(remote[2]) + "." + String(remote[3]);
                     Serial.println("PORT : " + String(DOMOTICZ_PORT));
                     html_response += "port " + String(DOMOTICZ_PORT)+ " set<br>";
                     saveServerPort(DOMOTICZ_PORT, eeAddress);
@@ -777,6 +774,11 @@ void loop() {
 					String httpUpdatePath = binPath.substring(firstSlashIndex);
 					html_response += "httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath + "<br>";
                     Serial.println("httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath);
+					
+					Serial.println(httpUpdateIp);
+					Serial.println(httpUpdatePort);
+					Serial.println(httpUpdatePath);
+					
 					// Fetch the new bin to flash
                     t_httpUpdate_return ret = ESPhttpUpdate.update(httpUpdateIp, httpUpdatePort.toInt(), httpUpdatePath);
                     delay(1000);
@@ -801,7 +803,7 @@ void loop() {
             else if(checkHttpRequestParam(request, "GET")) {
                 Serial.println("GET request type");
                 if(checkHttpRequestParam(request, "ping")) {
-                    html_response += "Toggling setpoint fetch, handle thermostat and pushHeaterStatus<br>";
+                    html_response += "Pong :-)<br>Toggling setpoint fetch, handle thermostat and pushHeaterStatus<br>";
                 }
                 if(checkHttpRequestParam(request, "whoAreYou")) {
                     html_response += "<br>I am a domoticz thermostat<br>";
