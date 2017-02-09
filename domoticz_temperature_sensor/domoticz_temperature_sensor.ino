@@ -274,6 +274,13 @@ void setup() {
   getSensorValues();
   lastSensorSendTime = millis();
   Serial.println("WiFi Status : " + String(WiFi.status()));
+  
+  // Added for sleepy
+  pushTemperature();
+  Serial.println("Going to sleep for " + String(5 * SENSOR_TIMEOUT) + "S");
+  ESP.deepSleep(5 * SENSOR_TIMEOUT * 1000000);
+  delay(100);
+  // Added for sleepy
 }
 
 //###################################################################################### LOOP

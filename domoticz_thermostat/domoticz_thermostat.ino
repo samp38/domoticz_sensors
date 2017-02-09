@@ -141,28 +141,27 @@ const unsigned char PROGMEM startupLogo [] = {
 ,0x01,0xff,0xff,0xff,0xff,0xff,0xfe,0x00
 };
 
-
+/// Globals
 // Variable saved to EPORMM
 byte DOMOTICZ_IP_ADDRESS[4];
 float SETPOINT = 0.0;
 unsigned int DOMOTICZ_PORT = 0;
-String DOMOTICZ_IP_ADDRESS_STR = "000.000.000.000";
 unsigned int SENSOR_TIMEOUT = 10;
-unsigned int THERMOSTAT_IDX = 1;
-unsigned int HEATER_SWITCH_IDX = 2;
-unsigned int TEMPSENSOR_IDX = 3;
+unsigned int THERMOSTAT_IDX = 1; // TODO : save to EEPROM
+unsigned int HEATER_SWITCH_IDX = 2; // TODO : save to EEPROM
+unsigned int TEMPSENSOR_IDX = 3; // TODO : save to EEPROM
 
 
+String DOMOTICZ_IP_ADDRESS_STR = "000.000.000.000";
 int SENSOR_TIMEOUT_MS = 0;
 int eeAddress = 0;
-String LOCALIP = "";
 float TEMPERATURE = 0;
-float HUMIDITY = 0;
+unsigned int internalServerPort = 8081;
 
 float therm_hysteresis = 0.5;
 bool heating = false;
 
-WiFiServer server(8081);
+WiFiServer server(internalServerPort);
 ESP_SSD1306 oled(OLED_RESET);
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature DS18B20(&oneWire);
@@ -228,7 +227,6 @@ bool getSensorValues()
       i -= 1;
       TEMPERATURE = DS18B20.getTempCByIndex(0);
     } while ((TEMPERATURE == 85.0 || TEMPERATURE == (-127.0)) && i > 0 );
-    HUMIDITY = NULL;
     // Check if any reads failed and exit early (to try again).
     if (isnan(TEMPERATURE) || TEMPERATURE == 85.0 || TEMPERATURE == (-127.0)) {
         Serial.println("Failed to read from DS18B20 sensor!");
@@ -237,7 +235,7 @@ bool getSensorValues()
     } else {
         Serial.println("Sensor Temp : " + String(TEMPERATURE));
         return true;
-    }  
+    }
 }
 
 unsigned long lastSensorSendTime = 0;
@@ -578,9 +576,7 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   oled.setCursor(0,0);
   oled.println("...failed");
   oled.print("connect to " + String(myWiFiManager->getConfigPortalSSID()) + " to configure wifi");
-  oled.print("server IP : " + WiFi.softAPIP().toString());
   oled.display();
-  Serial.println(myWiFiManager->getConfigPortalSSID());
 }
 
 
@@ -711,7 +707,6 @@ void loop() {
             // send a standard http response header
             client.println("HTTP/1.1 200 OK");
             client.println("Content-Type: text/html");
-            client.println("Connection: keep-alive");  // the connection will be closed after completion of the response
             client.println();
             client.println("<!DOCTYPE HTML>");
             client.println("<html>");
@@ -792,13 +787,11 @@ void loop() {
                     html_response += "<br>Sensor timeout : " + String(SENSOR_TIMEOUT) + "<br>";
                     html_response += "<br>Temperature:" + String(TEMPERATURE) + "C<br>";
                     html_response += "<br>Setpoint:" + String(SETPOINT) + "C<br>";
-                    html_response += "<br>Heater Status:" + String(heating) + "C<br>";
                     html_response += "<br>RSSI : " + String(getSsidQuality()) + "%<br>";
                 }
             }
             html_response += "\n</html>\n";
             client.print(html_response);
-            client.println();
             client.println();
             client.flush();
             client.stop();
