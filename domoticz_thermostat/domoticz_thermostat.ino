@@ -512,7 +512,7 @@ void parseBytes(const char* str, char sep, byte* bytes, int maxBytes, int base) 
     }
 }
 
-void saveServerIpAddress(String IP, unsigned int PORT, int address) {
+void saveServerIp(String IP, int address) {
     char temp[20];
     IP.toCharArray(temp,15);
     Serial.println("SAVING SERVER IP TO EEPROM :");
@@ -522,6 +522,11 @@ void saveServerIpAddress(String IP, unsigned int PORT, int address) {
     EEPROM.write(address+5, DOMOTICZ_IP_ADDRESS[1]);
     EEPROM.write(address+6, DOMOTICZ_IP_ADDRESS[2]);
     EEPROM.write(address+7, DOMOTICZ_IP_ADDRESS[3]);
+    EEPROM.commit();
+    Serial.println("Done");
+}
+
+void saveServerPort(unsigned int PORT, int address) {
     EEPROM.write(address+8, PORT);
     EEPROM.write(address+9, PORT >> 8);
     EEPROM.commit();
@@ -576,7 +581,9 @@ void configModeCallback (WiFiManager *myWiFiManager) {
   oled.setCursor(0,0);
   oled.println("...failed");
   oled.print("connect to " + String(myWiFiManager->getConfigPortalSSID()) + " to configure wifi");
+  oled.print(WiFi.softAPIP().toString() + ":" + String(internalServerPort));
   oled.display();
+  Serial.println("Connect to " + myWiFiManager->getConfigPortalSSID() + ":" + String(internalServerPort) + " to configure wifi");
 }
 
 
@@ -707,6 +714,7 @@ void loop() {
             // send a standard http response header
             client.println("HTTP/1.1 200 OK");
             client.println("Content-Type: text/html");
+            client.println("Connection: close");  // the connection will be closed after completion of the response
             client.println();
             client.println("<!DOCTYPE HTML>");
             client.println("<html>");
@@ -726,16 +734,25 @@ void loop() {
                     Serial.println("New Setpoint : " + setpointStr);
                     html_response += "New setpoint " + String(DOMOTICZ_PORT)+ " °C set<br>";
                 }
-                // if setServerIp
+				// if setServerIp
+                if(checkHttpRequestParam(request, "setServerIp")) {
+                    // Set ServerIp
+                    DOMOTICZ_IP_ADDRESS_STR  = getHttpRequestParamValue(request, "setServerIp");
+                    faltyRequest = false;                 
+                    Serial.println("IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + " set");
+                    html_response += "ip " + String(DOMOTICZ_IP_ADDRESS_STR)+ " set<br>";
+                    saveServerIp(DOMOTICZ_IP_ADDRESS_STR, eeAddress);
+                }
+                // if setServerPort
                 if(checkHttpRequestParam(request, "setServerPort")) {
-                    // Set ServerIP
+                    // Set ServerPort
                     String port = getHttpRequestParamValue(request, "setServerPort");
                     DOMOTICZ_PORT = port.toInt();
                     faltyRequest = false;                 
                     DOMOTICZ_IP_ADDRESS_STR = String(remote[0]) + "." + String(remote[1]) + "." + String(remote[2]) + "." + String(remote[3]);
                     Serial.println("PORT : " + String(DOMOTICZ_PORT));
                     html_response += "port " + String(DOMOTICZ_PORT)+ " set<br>";
-                    saveServerIpAddress(DOMOTICZ_IP_ADDRESS_STR, DOMOTICZ_PORT, eeAddress);
+                    saveServerPort(DOMOTICZ_PORT, eeAddress);
                 }
                 // if setSensorTimeout
                 if(checkHttpRequestParam(request, "setSensorTimeout")) {
@@ -753,9 +770,15 @@ void loop() {
                     faltyRequest = false;
                     // Respond to client
                     String binPath = getHttpRequestParamValue(request, "httpUpdate");
-                    Serial.println("httpUpdate toggled, path: " + DOMOTICZ_IP_ADDRESS_STR + binPath);
-                    html_response += "httpUpdate toggled, path : "+ DOMOTICZ_IP_ADDRESS_STR + binPath;
-                    t_httpUpdate_return ret = ESPhttpUpdate.update(DOMOTICZ_IP_ADDRESS_STR, DOMOTICZ_PORT, binPath);
+					unsigned int firstDotsIndex = binPath.indexOf(":");
+					unsigned int firstSlashIndex = binPath.indexOf("/");
+					String httpUpdateIp   = binPath.substring(0, firstDotsIndex);
+					String httpUpdatePort = binPath.substring(firstDotsIndex + 1, firstSlashIndex);
+					String httpUpdatePath = binPath.substring(firstSlashIndex);
+					html_response += "httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath + "<br>";
+                    Serial.println("httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath);
+					// Fetch the new bin to flash
+                    t_httpUpdate_return ret = ESPhttpUpdate.update(httpUpdateIp, httpUpdatePort.toInt(), httpUpdatePath);
                     delay(1000);
                     switch(ret) {
                         case HTTP_UPDATE_FAILED:
@@ -787,6 +810,7 @@ void loop() {
                     html_response += "<br>Sensor timeout : " + String(SENSOR_TIMEOUT) + "<br>";
                     html_response += "<br>Temperature:" + String(TEMPERATURE) + "C<br>";
                     html_response += "<br>Setpoint:" + String(SETPOINT) + "C<br>";
+                    html_response += "<br>Heater Status:" + String(heating) + "<br>";
                     html_response += "<br>RSSI : " + String(getSsidQuality()) + "%<br>";
                 }
             }
