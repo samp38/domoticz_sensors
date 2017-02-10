@@ -147,9 +147,9 @@ byte DOMOTICZ_IP_ADDRESS[4];
 float SETPOINT = 0.0;
 unsigned int DOMOTICZ_PORT = 0;
 unsigned int SENSOR_TIMEOUT = 10;
-unsigned int THERMOSTAT_IDX = 1; // TODO : save to EEPROM
-unsigned int HEATER_SWITCH_IDX = 2; // TODO : save to EEPROM
-unsigned int TEMPSENSOR_IDX = 3; // TODO : save to EEPROM
+unsigned int THERMOSTAT_IDX = 0;
+unsigned int HEATER_SWITCH_IDX = 0;
+unsigned int TEMPSENSOR_IDX = 0;
 
 
 String DOMOTICZ_IP_ADDRESS_STR = "000.000.000.000";
@@ -512,6 +512,23 @@ void parseBytes(const char* str, char sep, byte* bytes, int maxBytes, int base) 
     }
 }
 
+// EEPROM SAVE AND READ FUNCTIONS
+
+void saveThermostatSetpointIDX(unsigned int IDX, int address) {
+	EEPROM.write(address  , (uint8_t)THERMOSTAT_IDX);
+	EEPROM.commit();
+}
+
+void saveHeaterSwitchIDX(unsigned int IDX, int address) {
+	EEPROM.write(address+1  , (uint8_t)HEATER_SWITCH_IDX);
+	EEPROM.commit();
+}
+
+void saveTempSensorIDX(unsigned int IDX, int address) {
+	EEPROM.write(address+2  , (uint8_t)TEMPSENSOR_IDX);
+	EEPROM.commit();
+}
+
 void saveServerIp(String IP, int address) {
     char temp[20];
     IP.toCharArray(temp,15);
@@ -540,7 +557,10 @@ void saveSensorTimeout(int timeout, int address) {
     Serial.println("SAVING SENSOR TIMOUT TO EEPROM : " + String(SENSOR_TIMEOUT) + " S");
 }
 
-void readSettingsFromEEPROM(int address) { 
+void readSettingsFromEEPROM(int address) {
+	THERMOSTAT_IDX = (int)EEPROM.read(address+4);
+	HEATER_SWITCH_IDX = (int)EEPROM.read(address+4);
+	TEMPSENSOR_IDX = (int)EEPROM.read(address+4);
     byte port_lsb = 0;
     byte port_msb = 0;
     byte sensorTimeout_lsb = 0;
@@ -762,6 +782,28 @@ void loop() {
                     html_response += "Sensor timeout " + String(SENSOR_TIMEOUT) + "s set<br><br>";
                     saveSensorTimeout(SENSOR_TIMEOUT, eeAddress);
                 }
+				// If one of idx
+				if(checkHttpRequestParam(request, "setThermostatSetpointIdx")) {
+					faltyRequest = false;
+					THERMOSTAT_IDX = getHttpRequestParamValue(request, "setThermostatSetpointIdx").toInt();
+                    Serial.println("THERMOSTAT_IDX : " + String(THERMOSTAT_IDX));
+                    html_response += "thermostat_idx " + String(THERMOSTAT_IDX)+ " set<br>";
+					saveThermostatSetpointIDX(THERMOSTAT_IDX, eeAddress);
+				}
+				if(checkHttpRequestParam(request, "setHeaterSwitchIdx")) {
+					faltyRequest = false;
+					HEATER_SWITCH_IDX = getHttpRequestParamValue(request, "setHeaterSwitchIdx").toInt();
+                    Serial.println("HEATER_SWITCH_IDX : " + String(HEATER_SWITCH_IDX));
+                    html_response += "heaterSwitch_idx " + String(HEATER_SWITCH_IDX)+ " set<br>";
+					saveHeaterSwitchIDX(HEATER_SWITCH_IDX, eeAddress);
+				}
+				if(checkHttpRequestParam(request, "setTempSensorIdx")) {
+					faltyRequest = false;
+					TEMPSENSOR_IDX = getHttpRequestParamValue(request, "setTempSensorIdx").toInt();
+                    Serial.println("THERMOSTAT_IDX : " + String(TEMPSENSOR_IDX));
+                    html_response += "tempSensor_idx " + String(TEMPSENSOR_IDX)+ " set<br>";
+					saveTempSensorIDX(TEMPSENSOR_IDX, eeAddress);
+				}
                 // if httpUpdate
                 if(checkHttpRequestParam(request, "httpUpdate")) {
                     faltyRequest = false;
@@ -814,6 +856,10 @@ void loop() {
                     html_response += "<br>Setpoint:" + String(SETPOINT) + "C<br>";
                     html_response += "<br>Heater Status:" + String(heating) + "<br>";
                     html_response += "<br>RSSI : " + String(getSsidQuality()) + "%<br>";
+					html_response += "<br>";
+					html_response += "<br>Thermostat SetPoint IDX : " + String(THERMOSTAT_IDX);
+					html_response += "<br>Heater IDX : " + String(HEATER_SWITCH_IDX);
+					html_response += "<br>TempSensor IDX : " + String(TEMPSENSOR_IDX);
                 }
             }
             html_response += "\n</html>\n";
