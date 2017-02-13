@@ -558,9 +558,9 @@ void saveSensorTimeout(int timeout, int address) {
 }
 
 void readSettingsFromEEPROM(int address) {
-	THERMOSTAT_IDX = (int)EEPROM.read(address+4);
-	HEATER_SWITCH_IDX = (int)EEPROM.read(address+4);
-	TEMPSENSOR_IDX = (int)EEPROM.read(address+4);
+	THERMOSTAT_IDX = (int)EEPROM.read(address);
+	HEATER_SWITCH_IDX = (int)EEPROM.read(address+1);
+	TEMPSENSOR_IDX = (int)EEPROM.read(address+2);
     byte port_lsb = 0;
     byte port_msb = 0;
     byte sensorTimeout_lsb = 0;
@@ -731,11 +731,11 @@ void loop() {
             Serial.println("New Client Request : " + request);
             IPAddress remote = client.remoteIP();
             // send a standard http response header
-            String html_response = ("HTTP/1.1 200 OK ");
-            html_response += ("Content-Type: text/html");
-            html_response += ("Connection: close");  // the connection will be closed after completion of the response
+            client.println("HTTP/1.1 200 OK ");
+            client.println("Content-Type: text/html");
+            client.println("Connection: close");  // the connection will be closed after completion of the response
             client.println();
-            html_response += ("<!DOCTYPE HTML>");
+            String html_response = ("<!DOCTYPE HTML>");
             html_response += ("<html>");
             // Check method
             // If post, set variables
