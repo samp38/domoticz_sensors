@@ -817,16 +817,13 @@ void loop() {
 					html_response += "httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath + "<br>";
                     Serial.println("httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath);
 					
-					Serial.println(httpUpdateIp);
-					Serial.println(httpUpdatePort);
-					Serial.println(httpUpdatePath);
-					
 					// Fetch the new bin to flash
                     t_httpUpdate_return ret = ESPhttpUpdate.update(httpUpdateIp, httpUpdatePort.toInt(), httpUpdatePath);
                     delay(1000);
                     switch(ret) {
                         case HTTP_UPDATE_FAILED:
-                            html_response += "    [update] Update failed<br>";
+                            html_response += "[update] Update failed<br>";
+							html_response += "Error" + String(ESPhttpUpdate.getLastError())  + ESPhttpUpdate.getLastErrorString().c_str() + "<br>";
                             Serial.println("[update] Update failed.");
                             Serial.println("Error" + String(ESPhttpUpdate.getLastError())  + ESPhttpUpdate.getLastErrorString().c_str());
                         break;
