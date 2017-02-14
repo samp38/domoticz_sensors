@@ -450,7 +450,7 @@ void loop() {
 					response += "Server port : " + String(DOMOTICZ_PORT) + "<br>";
 					response += "Sensor Idx (Domoticz) : " + String(TEMPSENSOR_IDX) + "<br>";
 					response += "Sensor Name (Domoticz) : " + domoticzDeviceName + "<br>";
-					response += "Sensor timeout : " + String(SENSOR_TIMEOUT) + "<br>";
+					response += "Sensor timeout : " + String(SENSOR_TIMEOUT) + "s<br>";
 					response += "Temperature:" + String(TEMPERATURE) + "C<br>";
 					response += "Wifi network ssid : " + WiFi.SSID() + "<br>";
 					response += "RSSI : " + String(getSsidQuality()) + "%<br>";
