@@ -22,8 +22,8 @@
 byte DOMOTICZ_IP_ADDRESS[4];
 unsigned int DOMOTICZ_PORT = 0;
 String DOMOTICZ_IP_ADDRESS_STR = "000.000.000.000";
-unsigned int SENSOR_TIMEOUT = 10;
-unsigned int TEMPSENSOR_IDX = 4;
+unsigned int SENSOR_TIMEOUT = 120;
+unsigned int TEMPSENSOR_IDX = 0;
 
 int SENSOR_TIMEOUT_MS = 0;
 int eeAddress = 500;
@@ -33,30 +33,8 @@ float TEMPERATURE = 0;
 WiFiServer server(8081);
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature DS18B20(&oneWire);
-byte mac[6];
 int getSsidQuality(void);
 
-void eepromShow()
-{
-  for (int address = 0; address < EEPROM_SIZE; address++) {
-      // read a byte from the current address of the EEPROM
-      int value = EEPROM.read(address);
-    
-      Serial.print(address);
-      Serial.print("\t");
-      Serial.print(value, DEC);
-      Serial.println();
-  }
-}
-
-void eepromClear()
-{  
-  // write a 0 to all 512 bytes of the EEPROM
-  for (int i = 0; i < EEPROM_SIZE; i++) {
-      EEPROM.write(i, 0);
-      EEPROM.commit();
-  }  
-}
 
 float eepromReadFloat(int address){   
    union u_tag {
@@ -125,7 +103,6 @@ bool pushTemperature() {
   client.println();
   client.println();
   Serial.println("Done");
-  client.flush();
   client.stop();
   delay(1);
   // reset timer
@@ -144,8 +121,13 @@ void parseBytes(const char* str, char sep, byte* bytes, int maxBytes, int base) 
     }
 }
 
-void saveServerIpAddress(String IP, unsigned int PORT, int address) {
-    char temp[20];
+void saveTempSensorIDX(unsigned int IDX, int address) {
+	EEPROM.write(address  , (uint8_t)TEMPSENSOR_IDX);
+	EEPROM.commit();
+}
+
+void saveServerIp(String IP, int address) {
+	char temp[20];
     IP.toCharArray(temp,15);
     Serial.println("SAVING SERVER IP TO EEPROM :");
     Serial.println(temp);
@@ -154,6 +136,11 @@ void saveServerIpAddress(String IP, unsigned int PORT, int address) {
     EEPROM.write(address+5, DOMOTICZ_IP_ADDRESS[1]);
     EEPROM.write(address+6, DOMOTICZ_IP_ADDRESS[2]);
     EEPROM.write(address+7, DOMOTICZ_IP_ADDRESS[3]);
+    EEPROM.commit();
+    Serial.println("Done");
+}
+
+void saveServerPort(unsigned int PORT, int address) {
     EEPROM.write(address+8, PORT);
     EEPROM.write(address+9, PORT >> 8);
     EEPROM.commit();
@@ -172,7 +159,9 @@ void readSettingsFromEEPROM(int address) {
     byte port_msb = 0;
     byte sensorTimeout_lsb = 0;
     byte sensorTimeout_msb = 0;
-    Serial.println("READING SETTINGS IP FROM EEPROM :");
+    Serial.println("READING SETTINGS FROM EEPROM :");
+	// Read TEMPSENSOR_IDX
+	TEMPSENSOR_IDX = (int)EEPROM.read(address);
     // Read Server IP
     DOMOTICZ_IP_ADDRESS[0] = EEPROM.read(address+4);
     DOMOTICZ_IP_ADDRESS[1] = EEPROM.read(address+5);
@@ -197,9 +186,10 @@ void readSettingsFromEEPROM(int address) {
     SENSOR_TIMEOUT     = (sensorTimeout_msb << 8);
     SENSOR_TIMEOUT     = SENSOR_TIMEOUT + sensorTimeout_lsb;
     SENSOR_TIMEOUT_MS  = SENSOR_TIMEOUT * 1000;
-    Serial.println("ServerIP       :" + String(DOMOTICZ_IP_ADDRESS_STR));
-    Serial.println("PORT           :" + String(DOMOTICZ_PORT));
+    Serial.println("ServerIP       : " + String(DOMOTICZ_IP_ADDRESS_STR));
+    Serial.println("PORT           : " + String(DOMOTICZ_PORT));
     Serial.println("SENSOR TIMEOUT : " + String(SENSOR_TIMEOUT));
+	Serial.println("TEMPSENSOR_IDX : " + String(TEMPSENSOR_IDX));
     Serial.println("Done");
 }
 
@@ -247,20 +237,6 @@ void setup() {
   wifiManager.setConfigPortalTimeout(600);
   wifiManager.autoConnect("AutoConnectAP");
   delay(1000);
-  WiFi.macAddress(mac);
-  Serial.print("MAC: ");
-  Serial.print(mac[5],HEX);
-  Serial.print(":");
-  Serial.print(mac[4],HEX);
-  Serial.print(":");
-  Serial.print(mac[3],HEX);
-  Serial.print(":");
-  Serial.print(mac[2],HEX);
-  Serial.print(":");
-  Serial.print(mac[1],HEX);
-  Serial.print(":");
-  Serial.println(mac[0],HEX);
-  
   server.begin();
   Serial.println("Server started");
   //eepromShow();
@@ -268,6 +244,7 @@ void setup() {
 
   // Print the IP address
   Serial.println(WiFi.localIP());
+  Serial.println("MAC ADDRESS : " + WiFi.macAddress());
   Serial.println("SSID : " + String(WiFi.SSID()));
   Serial.println("RSSI : " + String(WiFi.RSSI()));
   Serial.println("Quality : " + String(getSsidQuality()) + "%");
@@ -276,10 +253,10 @@ void setup() {
   Serial.println("WiFi Status : " + String(WiFi.status()));
   
   // Added for sleepy
-  pushTemperature();
-  Serial.println("Going to sleep for " + String(5 * SENSOR_TIMEOUT) + "S");
-  ESP.deepSleep(5 * SENSOR_TIMEOUT * 1000000);
-  delay(100);
+  // pushTemperature();
+  // Serial.println("Going to sleep for " + String(5 * SENSOR_TIMEOUT) + "S");
+  // ESP.deepSleep(5 * SENSOR_TIMEOUT * 1000000);
+  // delay(100);
   // Added for sleepy
 }
 
@@ -288,95 +265,170 @@ void setup() {
 void loop() {
     WiFiClient client = server.available();
     if (client) {
-        String rawRequest = client.readStringUntil('\r');
-        String request = rawRequest;
-        request.remove(rawRequest.indexOf("HTTP/1.1"));
-        Serial.println("New Client Request : " + request);
-        IPAddress remote = client.remoteIP();
-        client.flush();
-        client.print("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE HTML>\r\n<html>\r\n");
-        // Check method
-        // If post, set variables
-        if(checkHttpRequestParam(request, "POST")) {
-            Serial.println("POST request type");
-            bool faltyRequest = true;
-            // Check command
-            // if setServerIp
-            if(checkHttpRequestParam(request, "setServerPort")) {
-                // Set ServerIP
-                String port = getHttpRequestParamValue(request, "setServerPort");
-                DOMOTICZ_PORT = port.toInt();
-                faltyRequest = false;                 
-                DOMOTICZ_IP_ADDRESS_STR = String(remote[0]) + "." + String(remote[1]) + "." + String(remote[2]) + "." + String(remote[3]);
-                Serial.println("PORT : " + String(DOMOTICZ_PORT));
-                client.print("port " + String(DOMOTICZ_PORT)+ " set<br>" );
-                saveServerIpAddress(DOMOTICZ_IP_ADDRESS_STR, DOMOTICZ_PORT, eeAddress);
-            }
-            // if setSensorTimout
-            if(checkHttpRequestParam(request, "setSensorTimeout")) {
-                // Set ServerIP
-                String sensorTimout = getHttpRequestParamValue(request, "setSensorTimeout");
-                SENSOR_TIMEOUT = sensorTimout.toInt();
-                SENSOR_TIMEOUT_MS = SENSOR_TIMEOUT * 1000;
-                faltyRequest = false;                 
-                Serial.println("SENSOR_TIMEOUT : " + String(SENSOR_TIMEOUT));
-                client.print("Sensor timeout " + String(SENSOR_TIMEOUT) + "s set<br><br>");
-                saveSensorTimeout(SENSOR_TIMEOUT, eeAddress);
-            }
-            // if httpUpdate
-            if(checkHttpRequestParam(request, "httpUpdate")) {
-                faltyRequest = false;
-                // Respond to client
-                String binPath = getHttpRequestParamValue(request, "httpUpdate");
-                Serial.println("httpUpdate toggled, path: " + DOMOTICZ_IP_ADDRESS_STR + binPath);
-                client.print("httpUpdate toggled, path : "+ DOMOTICZ_IP_ADDRESS_STR + binPath + "<br><br>");
-                t_httpUpdate_return ret = ESPhttpUpdate.update(DOMOTICZ_IP_ADDRESS_STR, DOMOTICZ_PORT, binPath);
-                delay(1000);
-                switch(ret) {
-                    case HTTP_UPDATE_FAILED:
-                        client.print("    [update] Update failed<br>");
-                        Serial.println("[update] Update failed.");
-                        Serial.println("Error" + String(ESPhttpUpdate.getLastError())  + ESPhttpUpdate.getLastErrorString().c_str());
-                    break;
-                    case HTTP_UPDATE_NO_UPDATES:
-                        client.print("    [update] Update no Update<br>");
-                        Serial.println("[update] Update no Update.");
-                    break;
-                }
-            }
-            // if unknown request
-            if (faltyRequest == true) {
-                client.print("Request Error : variable to set unknown<br>");
-                Serial.println("Request Error : variable to set unknown");
-            }
+        Serial.println("--> Request begin");
+		String response = "";
+		String requestToParse = "";
+		String method = "UNKNOWN";
+        bool body = false;
+		bool faultyRequest = true;
+		unsigned long now = millis();
+        while(client.connected()) {
+			if(millis() - now > 5000) {
+				faultyRequest = true;
+				response += "client timeout";
+				Serial.println("client timeout");
+				break;
+			}
+            String requestPart = client.readStringUntil('\n');
+			if(requestPart.indexOf("GET") != -1) {
+				method = "GET";
+			}
+			if(requestPart.indexOf("POST") != -1) {
+				method = "POST";
+			}
+			if(method == "POST") {
+    	        if(body) {
+    	            requestToParse = requestPart;
+    	            break;
+    	        }
+    	        if(requestPart == "\r") {
+    	            body = true;
+    	        }
+			}
+			else if(method == "GET") {
+				requestToParse = requestPart;
+				requestToParse.remove(requestPart.indexOf("HTTP/1.1"));
+				break;
+			}
+			else {
+				response += "Unsupported method";
+				break;
+			}
         }
-        else if(checkHttpRequestParam(request, "GET")) {
-                Serial.println("GET request type");
-                if(checkHttpRequestParam(request, "ping")) {
-                    client.print("Toggling temperature data transfer to server<br>");
-                }
-                if(checkHttpRequestParam(request, "whoAreYou")) {
-                    client.print("<br>I am a Domoticz temperature sensor<br>");
-                    client.print("Current data :<br>Server IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + "<br>");
-                    client.print("<br>Server port : " + String(DOMOTICZ_PORT) + "<br>");
-                    client.print("<br>Sensor timeout : " + String(SENSOR_TIMEOUT) + "<br>");
-                    client.print("<br>Temperature:" + String(TEMPERATURE) + "C<br>");
-                    client.print("<br>RSSI : " + String(getSsidQuality()) + "%<br>");
-                }
-            }                 
-        // Send variables and respond to client
-        getSensorValues();
-        client.print("\n</html>\n");
-        client.println();
-        client.println();
-        client.stop();
-        Serial.println("Client disonnected");
-        delay(10);
-        pushTemperature();
-        lastSensorSendTime = millis();
-    }
-
-    
+        // Check method
+		if(method != "UNKNOWN") {
+    	    // If post, set variables
+    	    if(method == "POST") {
+    	        Serial.println("POST request type");
+    	        // Check command
+				if(checkHttpRequestParam(requestToParse, "tempSensorIdx")) {
+					faultyRequest = false;
+					TEMPSENSOR_IDX = getHttpRequestParamValue(requestToParse, "tempSensorIdx").toInt();
+    	            Serial.println("THERMOSTAT_IDX : " + String(TEMPSENSOR_IDX));
+    	            response += "tempSensor_idx " + String(TEMPSENSOR_IDX)+ " set<br>";
+					saveTempSensorIDX(TEMPSENSOR_IDX, eeAddress);
+				}
+				// if setServerIp
+    	        if(checkHttpRequestParam(requestToParse, "serverIp")) {
+    	            // Set ServerIp
+    	            DOMOTICZ_IP_ADDRESS_STR  = getHttpRequestParamValue(requestToParse, "serverIp");
+    	            faultyRequest = false;                 
+    	            Serial.println("IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + " set");
+    	            response += "ip " + String(DOMOTICZ_IP_ADDRESS_STR)+ " set<br>";
+    	            saveServerIp(DOMOTICZ_IP_ADDRESS_STR, eeAddress);
+    	        }
+    	        // if setServerPort
+    	        if(checkHttpRequestParam(requestToParse, "serverPort")) {
+    	            // Set ServerPort
+    	            String port = getHttpRequestParamValue(requestToParse, "serverPort");
+    	            DOMOTICZ_PORT = port.toInt();
+    	            faultyRequest = false;                 
+    	            Serial.println("PORT : " + String(DOMOTICZ_PORT));
+    	            response += "port " + String(DOMOTICZ_PORT)+ " set<br>";
+    	            saveServerPort(DOMOTICZ_PORT, eeAddress);
+    	        }
+    	        // if setSensorTimout
+    	        if(checkHttpRequestParam(requestToParse, "sensorTimeout")) {
+    	            // Set ServerIP
+    	            String sensorTimout = getHttpRequestParamValue(requestToParse, "sensorTimeout");
+    	            SENSOR_TIMEOUT = sensorTimout.toInt();
+    	            SENSOR_TIMEOUT_MS = SENSOR_TIMEOUT * 1000;
+    	            faultyRequest = false;                 
+    	            Serial.println("SENSOR_TIMEOUT : " + String(SENSOR_TIMEOUT));
+    	            response += "Sensor timeout " + String(SENSOR_TIMEOUT) + "s set<br><br>";
+    	            saveSensorTimeout(SENSOR_TIMEOUT, eeAddress);
+    	        }
+    	        // if httpUpdate
+    	        if(checkHttpRequestParam(requestToParse, "httpUpdate")) {
+    	            faultyRequest = false;
+    	            // Respond to client
+    	            String binPath = getHttpRequestParamValue(requestToParse, "httpUpdate");
+					unsigned int firstDotsIndex = binPath.indexOf(":");
+					unsigned int firstSlashIndex = binPath.indexOf("/");
+					String httpUpdateIp   = binPath.substring(0, firstDotsIndex);
+					String httpUpdatePort = binPath.substring(firstDotsIndex + 1, firstSlashIndex);
+					String httpUpdatePath = binPath.substring(firstSlashIndex);
+					response += "httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath + "<br>";
+    	            Serial.println("httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath);
+					// Fetch the new bin to flash
+    	            t_httpUpdate_return ret = ESPhttpUpdate.update(httpUpdateIp, httpUpdatePort.toInt(), httpUpdatePath);
+    	            delay(1000);
+    	            switch(ret) {
+    	                case HTTP_UPDATE_FAILED:
+    	                    response += "[update] Update failed<br>";
+							response += "Error" + String(ESPhttpUpdate.getLastError())  + ESPhttpUpdate.getLastErrorString().c_str() + "<br>";
+    	                    Serial.println("[update] Update failed.");
+    	                    Serial.println("Error" + String(ESPhttpUpdate.getLastError())  + ESPhttpUpdate.getLastErrorString().c_str());
+    	                break;
+    	                case HTTP_UPDATE_NO_UPDATES:
+    	                    response += "    [update] Update no Update<br>";
+    	                    Serial.println("[update] Update no Update.");
+    	                break;
+    	            }
+    	        }
+    	        // if unknown request
+    	        if (faultyRequest == true) {
+    	            response += "Request Error : variable to set unknown";
+    	            Serial.println("Request Error : variable to set unknown");
+    	        }
+    	    }
+    	    else if(method == "GET") {
+				Serial.println("GET request type");
+    	        if(checkHttpRequestParam(requestToParse, "ping")) {
+    	        	response += "Toggling temperature data transfer to server<br>";
+				}
+    	        if(checkHttpRequestParam(requestToParse, "whoAreYou")) {
+					response += "<br>I am a Domoticz temperature sensor (Piscine) <br>";
+					response += "Server IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + "<br>";
+					response += "Server port : " + String(DOMOTICZ_PORT) + "<br>";
+					response += "Sensor Idx (Domoticz) : " + String(TEMPSENSOR_IDX) + "<br>";
+					response += "Sensor timeout : " + String(SENSOR_TIMEOUT) + "<br>";
+					response += "Temperature:" + String(TEMPERATURE) + "C<br>";
+					response += "RSSI : " + String(getSsidQuality()) + "%<br>";
+					response += "MAC ADDRESS : " + WiFi.macAddress();
+					response += "<br>";
+					response += "<br>POST settable variables :";
+					response += "<br>    tempSensorIdx	: set matching domoticz device's idx";
+					response += "<br>    serverIp		: set domoticz server ip";
+					response += "<br>    serverPort	: set domoticz server port";
+					response += "<br>    sensorTimeout	: time between two sensor sendings";
+					response += "<br>    httpUpdate	: url of binary to flash [IP_ADDRESS:PORT/PATH/TO/FILE.BIN]";
+					response += "<br>					";
+					response += "<br>GET requests :";
+					response += "<br>    /ping			: raises the sensor, send value to domoticz";
+					response += "<br>    /whoAreYou	: display this menu";
+    	        }
+			}
+				                 
+    	    // Send variables and respond to client in both cases POST and GET
+    	    getSensorValues();
+			client.print("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE HTML>\r\n<html>\r\n");
+			client.print(response);
+    	    client.print("\n</html>\n");
+    	    client.println();
+    	    client.println();
+    	    client.stop();
+    	    Serial.println("Client disonnected");
+    	    delay(10);
+    	    pushTemperature();
+    	    lastSensorSendTime = millis();
+    	}
+		// if method is unknown
+		else {
+			client.print("HTTP/1.1 400 " + response + "\r\n");
+	        client.stop();
+		}
+	}
     else if (isIntervalElapsed(SENSOR_TIMEOUT_MS, lastSensorSendTime)) {
         if(!getSensorValues()) {
             Serial.println("ERROR : Temps sensor down");
