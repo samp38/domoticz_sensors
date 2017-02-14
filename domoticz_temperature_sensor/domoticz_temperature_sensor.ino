@@ -4,6 +4,7 @@
 #include <EEPROM.h>
 #include <OneWire.h>
 #include <DallasTemperature.h>
+#include <ArduinoJson.h>
 
 //EEPROM
 #define EEPROM_SIZE 512
@@ -18,12 +19,17 @@
 
 #define DS18B20_RESOLUTION 11
 
+
+/// Globals
 // Variable saved to EPORMM
 byte DOMOTICZ_IP_ADDRESS[4];
 unsigned int DOMOTICZ_PORT = 0;
 String DOMOTICZ_IP_ADDRESS_STR = "000.000.000.000";
 unsigned int SENSOR_TIMEOUT = 120;
 unsigned int TEMPSENSOR_IDX = 0;
+unsigned long lastSensorSendTime = 0;
+int getSsidQuality(void);
+
 
 int SENSOR_TIMEOUT_MS = 0;
 int eeAddress = 500;
@@ -33,8 +39,30 @@ float TEMPERATURE = 0;
 WiFiServer server(8081);
 OneWire oneWire(ONE_WIRE_BUS);
 DallasTemperature DS18B20(&oneWire);
-int getSsidQuality(void);
 
+bool isIntervalElapsed(unsigned long interval, unsigned long referenceTime) {
+  return (unsigned long)(millis() - referenceTime) >= interval;
+}
+
+void parseBytes(const char* str, char sep, byte* bytes, int maxBytes, int base) {
+    for (int i = 0; i < maxBytes; i++) {
+        bytes[i] = strtoul(str, NULL, base);  // Convert byte
+        str = strchr(str, sep);               // Find next separator
+        if (str == NULL || *str == '\0') {
+            break;                            // No more separators, exit
+        }
+        str++;                                // Point to next character after separator
+    }
+}
+
+int getSsidQuality(void) {
+    int quality = 2 * (int(WiFi.RSSI()) + 100);
+    if(quality > 100) {return 100;}
+    else if(quality < 0) {return 0;}
+    else {return quality;}
+}
+
+// ######################################################################## EEPROM FUNCTIONS
 
 float eepromReadFloat(int address){   
    union u_tag {
@@ -60,65 +88,6 @@ void eepromWriteFloat(int address, float value){
    EEPROM.write(address+2, u.b[2]);
    EEPROM.write(address+3, u.b[3]);
    EEPROM.commit();
-}
-
-
-bool getSensorValues()
-{
-    int i = 10;
-    DS18B20.requestTemperatures();
-    do {
-      i -= 1;
-      TEMPERATURE = DS18B20.getTempCByIndex(0);
-    } while ((TEMPERATURE == 85.0 || TEMPERATURE == (-127.0)) && i > 0 );
-    // Check if any reads failed and exit early (to try again).
-    if (isnan(TEMPERATURE) || TEMPERATURE == 85.0 || TEMPERATURE == (-127.0)) {
-        Serial.println("Failed to read from DS18B20 sensor!");
-        TEMPERATURE = 99;
-        return false;    
-    } else {
-        Serial.println("Sensor Temp : " + String(TEMPERATURE));
-        return true;
-    }  
-}
-
-unsigned long lastSensorSendTime = 0;
-
-bool pushTemperature() {
-  WiFiClient client;
-  client.setNoDelay(true);
-  Serial.println("Pushing temperature...");
-  if (!client.connect(DOMOTICZ_IP_ADDRESS, DOMOTICZ_PORT)) {
-    Serial.println("Fail to contact server");
-    client.stop();
-    return false;
-  }
-  //Serial.print("POSTING data to URL...");
-  client.print("GET /json.htm?type=command&param=udevice&idx="+String(TEMPSENSOR_IDX)+"&nvalue=0&svalue=");
-  client.print( TEMPERATURE );
-  client.println( " HTTP/1.1");
-  client.print( "Host: " );
-  client.println(DOMOTICZ_IP_ADDRESS_STR);
-  client.println( "Connection: close" );  
-  client.println();
-  client.println();
-  Serial.println("Done");
-  client.stop();
-  delay(1);
-  // reset timer
-  lastSensorSendTime = millis();
-  return true;
-}
-
-void parseBytes(const char* str, char sep, byte* bytes, int maxBytes, int base) {
-    for (int i = 0; i < maxBytes; i++) {
-        bytes[i] = strtoul(str, NULL, base);  // Convert byte
-        str = strchr(str, sep);               // Find next separator
-        if (str == NULL || *str == '\0') {
-            break;                            // No more separators, exit
-        }
-        str++;                                // Point to next character after separator
-    }
 }
 
 void saveTempSensorIDX(unsigned int IDX, int address) {
@@ -193,11 +162,110 @@ void readSettingsFromEEPROM(int address) {
     Serial.println("Done");
 }
 
+// ######################################################################## SENSOR FUNCTIONS
 
-bool isIntervalElapsed(unsigned long interval, unsigned long referenceTime) {
-  return (unsigned long)(millis() - referenceTime) >= interval;
+bool getSensorValues() {
+    int i = 10;
+    DS18B20.requestTemperatures();
+    do {
+      i -= 1;
+      TEMPERATURE = DS18B20.getTempCByIndex(0);
+    } while ((TEMPERATURE == 85.0 || TEMPERATURE == (-127.0)) && i > 0 );
+    // Check if any reads failed and exit early (to try again).
+    if (isnan(TEMPERATURE) || TEMPERATURE == 85.0 || TEMPERATURE == (-127.0)) {
+        Serial.println("Failed to read from DS18B20 sensor!");
+        TEMPERATURE = 99;
+        return false;    
+    } else {
+        Serial.println("Sensor Temp : " + String(TEMPERATURE));
+        return true;
+    }  
 }
 
+// ######################################################################## HTTP FUNCTIONS
+
+bool pushTemperature() {
+  WiFiClient client;
+  client.setNoDelay(true);
+  Serial.println("Pushing temperature...");
+  if (!client.connect(DOMOTICZ_IP_ADDRESS, DOMOTICZ_PORT)) {
+    Serial.println("Fail to contact server");
+    client.stop();
+    return false;
+  }
+  //Serial.print("POSTING data to URL...");
+  client.print("GET /json.htm?type=command&param=udevice&idx="+String(TEMPSENSOR_IDX)+"&nvalue=0&svalue=");
+  client.print( TEMPERATURE );
+  client.println( " HTTP/1.1");
+  client.print( "Host: " );
+  client.println(DOMOTICZ_IP_ADDRESS_STR);
+  client.println( "Connection: close" );  
+  client.println();
+  client.println();
+  Serial.println("Done");
+  client.stop();
+  delay(1);
+  // reset timer
+  lastSensorSendTime = millis();
+  return true;
+}
+
+String getDomoticzDeviceName(int idx) {
+  Serial.println("Fetching device name in Domoticz database...");
+  WiFiClient client;
+  client.setNoDelay(true);
+  client.stop();
+  //Serial.print("Connectiong Client...");
+  if (!client.connect(DOMOTICZ_IP_ADDRESS, DOMOTICZ_PORT)) {
+    Serial.println("Fail to contact server");
+    client.stop();
+    return "NC";
+  }
+  //Serial.print("POSTING data to URL...");
+  client.print("GET /json.htm?type=devices&rid=" + String(idx));
+  client.println( " HTTP/1.1");
+  client.print( "Host: " );
+  client.println(DOMOTICZ_IP_ADDRESS_STR);
+  client.println( "Connection: close" );  
+  client.println();
+  client.println();  
+  delay(500); // wait for server to respond
+  // read response
+  String result = "";
+  String section = "headers";
+  while(client.available()){
+    String line = client.readStringUntil('\r');
+    //Serial.println(line);
+    //Serial.println("*********************");
+    
+    if (section == "headers") {
+      //Serial.println("//");
+      if (line=="\n") { // skips the empty space at the beginning 
+          section="json";
+      }
+    }
+    else if (section == "json") {
+      result = line;
+      section = "'ignore";
+    }
+  }
+  //Serial.print("closing connection. ");
+  client.stop();
+  //Serial.println(result);
+  int size = result.length() + 1;
+  char json[size];
+  result.toCharArray(json, size);
+  //Serial.println(json);
+  StaticJsonBuffer<800> jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(const_cast<char*>(json));
+  if (!root.success()) {
+    Serial.println("parseObject() failed");
+    return "NC";
+  }
+  const char* name = root["result"][0]["Name"];
+  Serial.println("    got " + String(name));
+  return String(name);
+}
 
 String getHttpRequestParamValue(String input_str, String param) {
       int param_index = input_str.indexOf(param);
@@ -212,18 +280,6 @@ bool checkHttpRequestParam(String input_str, String param) {
     int param_index = input_str.indexOf(param);
     if(param_index == -1) {return false;}
     else {return true;}
-}
-
-
-int getSsidQuality(void) {
-    int quality = 2 * (int(WiFi.RSSI()) + 100);
-    if(quality > 100) {return 100;}
-    else if(quality < 0) {return 0;}
-    else {return quality;}
-}
-
-String toHtml(String input_string) {
-    return "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE HTML>\r\n<html>\r\n" + input_string + "\n</html>\n";
 }
 
 //###################################################################################### SETUP
@@ -388,12 +444,15 @@ void loop() {
     	        	response += "Toggling temperature data transfer to server<br>";
 				}
     	        if(checkHttpRequestParam(requestToParse, "whoAreYou")) {
-					response += "<br>I am a Domoticz temperature sensor (Piscine) <br>";
+					String domoticzDeviceName = getDomoticzDeviceName(TEMPSENSOR_IDX);
+					response += "<br>I am a Domoticz temperature sensor<br>";
 					response += "Server IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + "<br>";
 					response += "Server port : " + String(DOMOTICZ_PORT) + "<br>";
 					response += "Sensor Idx (Domoticz) : " + String(TEMPSENSOR_IDX) + "<br>";
+					response += "Sensor Name (Domoticz) : " + domoticzDeviceName + "<br>";
 					response += "Sensor timeout : " + String(SENSOR_TIMEOUT) + "<br>";
 					response += "Temperature:" + String(TEMPERATURE) + "C<br>";
+					response += "Wifi network ssid : " + WiFi.SSID() + "<br>";
 					response += "RSSI : " + String(getSsidQuality()) + "%<br>";
 					response += "MAC ADDRESS : " + WiFi.macAddress();
 					response += "<br>";
