@@ -45,14 +45,51 @@ You are now ready to follow up to the hardware setup!
 This step is the same for all the devices. Just plug it to a current source and wait a few seconds. If the device finds a known wifi SSID it will try to connect to with the credentials saved in EEPROM. If not, or if there are no credentials saved, it will create a WiFi network named _autoconnectAP_. You can use a smartphone or a laptop to connect to. Then, go to the url _192.168.4.1_ and configure your WiFi connection. Easy!
 
 ### Step 3 : configure the  device by sending http requests
-By design, the way to configure the devices is http requests. If you use a linux server (Raspberry Pi) or a Mac, _curl_ is an easy way. __The devices run a server that listen on port 8081__. To begin configuration, you need the IP address the device. Figure it out through your router admin page.
-GET requests :
+By design, the way to configure the devices is http requests. If you use a linux server (Raspberry Pi) or a Mac, _curl_ is an easy way, although any web browser will do the job. __The devices run a server that listen on port 8081__. To begin configuration, you need the IP address the device. Figure it out through your router admin page. To better readability, you can pipe the output to html2text.
+
+__GET requests__ :
 
 * read the settings of the device
 ```sh
-curl "192.168.XXX.X:8081/whAreYou"
+curl "192.168.XXX.X:8081/whAreYou" | html2text
 ```
+or with web browser:
+_192.168.XXX.X:8081/whoAreYou_
+
+Here is a response example for the thermostat:
+```sh {
+I am a domoticz thermostat
+Server IP : 192.168.0.99
+Server port : 8081
+Thermostat SetPoint idx (Domoticz) : 1 (Consigne Thermostat) in Domoticz
+Heater idx (Domoticz) : 2 (Chaudiere) in Domoticz
+TempSensor idx (Domoticz) : 3 (Sonde Thermostat) in Domoticz
+Sensor timeout : 60
+Temperature:11.25
+Setpoint : 8.00
+Heater Status : 0
+Wifi network ssid : chambre_ritou_zviloff
+RSSI : 36%
+MAC ADDRESS : 5C:CF:7F:23:F0:86
+
+POST settable variables :
+tempSensorIdx : set matching domoticz device's idx
+heaterSwitchIdx : set matching domoticz device's idx
+thermostatSetpointIdx : set matching domoticz device's idx
+serverIp : set domoticz server ip
+serverPort : set domoticz server port
+sensorTimeout : time between two sensor sendings
+httpUpdate : url of binary to flash [IP_ADDRESS:PORT/PATH/TO/FILE.BIN]
+
+GET requests :
+/ping : raises the sensor, send value to domoticz
+/whoAreYou : display this menu }
+```
+
 * toggle the sensor and make it send its data to domoticz
 ```sh
-curl "192.168.XXX.X:8081/ping"
+curl "192.168.XXX.X:8081/ping" | html2text
 ```
+
+__POST REQUESTS__ :
+POST requests allow you to set the variables described in the _whoAreYou_ menu.
