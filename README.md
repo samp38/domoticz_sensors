@@ -49,10 +49,10 @@ By design, the way to configure the devices is http requests. If you use a linux
 GET requests :
 
 * read the settings of the device
-'''sh
+```sh
 curl "192.168.XXX.X:8081/whAreYou"
-'''
+```
 * toggle the sensor and make it send its data to domoticz
-'''sh
+```sh
 curl "192.168.XXX.X:8081/ping"
-'''
+```
