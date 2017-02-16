@@ -245,7 +245,7 @@ String getDomoticzDeviceName(int idx) {
     }
     else if (section == "json") {
       result = line;
-      section = "'ignore";
+      section = "ignore";
     }
   }
   //Serial.print("closing connection. ");
@@ -320,7 +320,7 @@ void setup() {
 void loop() {
     WiFiClient client = server.available();
     if (client) {
-        Serial.println("--> Request begin");
+        Serial.println("--> Incoming request begin");
         String response = "";
         String requestToParse = "";
         String method = "UNKNOWN";
@@ -450,7 +450,7 @@ void loop() {
                     response += "Sensor Idx (Domoticz) : " + String(TEMPSENSOR_IDX) + "<br>";
                     response += "Sensor Name (Domoticz) : " + domoticzDeviceName + "<br>";
                     response += "Sensor timeout : " + String(SENSOR_TIMEOUT) + "s<br>";
-                    response += "Temperature:" + String(TEMPERATURE) + "C<br>";
+                    response += "Temperature : " + String(TEMPERATURE) + "C<br>";
                     response += "Wifi network ssid : " + WiFi.SSID() + "<br>";
                     response += "RSSI : " + String(getSsidQuality()) + "%<br>";
                     response += "MAC ADDRESS : " + WiFi.macAddress();
