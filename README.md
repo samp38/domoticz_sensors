@@ -17,3 +17,9 @@ Requirements:
 * a working Wifi network
 * a server with domoticz running (you will need the server IP address and the Domoticz listening port, which is 8080 by default)
 * a Wifi device, such as laptop or smartphone, to configure your domoticz's device Wifi credentials
+
+### Step 1 : Create your Domoticz virtual sensor(s)
+The very first thing to do is to create a dummy hardware in the Setup --> Hardware menu. Name it as you want, for example 'thermostatHardware' for the thermostat or 'temperatureSensorHardware' for the simple temperature sensor. These names don't matter. Here is an example :
+![example0]
+(pics/example0.tiff)
+From this panel you can now create virtual devices.
