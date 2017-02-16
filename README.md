@@ -58,7 +58,7 @@ _192.168.XXX.X:8081/whoAreYou_
 
 Here is a response example for the thermostat:
 ```sh
-{I am a domoticz thermostat
+I am a domoticz thermostat
 Server IP : 192.168.0.99
 Server port : 8081
 Thermostat SetPoint idx (Domoticz) : 1 (Consigne Thermostat) in Domoticz
@@ -83,7 +83,7 @@ httpUpdate : url of binary to flash [IP_ADDRESS:PORT/PATH/TO/FILE.BIN]
 
 GET requests :
 /ping : raises the sensor, send value to domoticz
-/whoAreYou : display this menu}
+/whoAreYou : display this menu
 ```
 
 * toggle the sensor and make it send its data to domoticz
@@ -92,4 +92,14 @@ curl "192.168.XXX.X:8081/ping" | html2text
 ```
 
 __POST REQUESTS__ :
-POST requests allow you to set the variables described in the _whoAreYou_ menu.
+POST requests allow you to set the variables described in the _whoAreYou_ menu. This can be done using curl again :
+```sh
+curl -d "variableName=value" 192.168.XXX.X:8081
+```
+
+## OTA (Over The Air) firmware update
+You can toggle a firmware update with a POST request, passing the binary path to the _httpUpdate_ variable.
+```sh
+curl -d "httpUpdate=AnyServerIp:port/path/to/bin.bin" 192.168.XXX.X:8081
+```
+The only requirement is to properly serve the bin file. Once toggled, the chip will auto flash its firmware and reboot.
