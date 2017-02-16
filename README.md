@@ -57,7 +57,7 @@ or with web browser:
 _192.168.XXX.X:8081/whoAreYou_
 
 Here is a response example for the thermostat:
-```sh
+```
 I am a domoticz thermostat
 Server IP : 192.168.0.99
 Server port : 8081
@@ -92,6 +92,7 @@ curl "192.168.XXX.X:8081/ping" | html2text
 ```
 
 __POST REQUESTS__ :
+
 POST requests allow you to set the variables described in the _whoAreYou_ menu. This can be done using curl again :
 ```sh
 curl -d "variableName=value" 192.168.XXX.X:8081
