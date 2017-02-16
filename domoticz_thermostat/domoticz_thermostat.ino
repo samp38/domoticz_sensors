@@ -143,8 +143,8 @@ const unsigned char PROGMEM startupLogo [] = {
 
 /// Globals
 // Variable saved to EPORMM
-byte DOMOTICZ_IP_ADDRESS[4];
 float SETPOINT = 0.0;
+byte DOMOTICZ_IP_ADDRESS[4];
 unsigned int DOMOTICZ_PORT = 0;
 unsigned int SENSOR_TIMEOUT = 10;
 unsigned int THERMOSTAT_IDX = 0;
@@ -241,8 +241,8 @@ bool getSensorValues()
 unsigned long lastSensorSendTime = 0;
 
 
-float getSetPoint() {
-  Serial.println("Fetching SetPoint in Domoticz database...");
+String getDomoticzValue(String fieldName, unsigned int idx) {
+  Serial.println("Fetching value in Domoticz database...");
   WiFiClient client;
   client.setNoDelay(true);
   client.stop();
@@ -251,10 +251,10 @@ float getSetPoint() {
     Serial.println("Fail to contact server");
     client.stop();
     oledPushMessage("Server down");
-    return false;
+    return "NC";
   }
   //Serial.print("POSTING data to URL...");
-  client.print("GET /json.htm?type=devices&rid=" + String(THERMOSTAT_IDX));
+  client.print("GET /json.htm?type=devices&rid=" + String(idx));
   client.println( " HTTP/1.1");
   client.print( "Host: " );
   client.println(DOMOTICZ_IP_ADDRESS_STR);
@@ -278,26 +278,26 @@ float getSetPoint() {
     }
     else if (section == "json") {
       result = line;
-      section = "'ignore";
+      section = "ignore";
     }
   }
   //Serial.print("closing connection. ");
   client.stop();
   //Serial.println(result);
-  int size = result.length() + 1;
-  char json[size];
-  result.toCharArray(json, size);
+  // int size = result.length() + 1;
+  // char json[size];
+  // result.toCharArray(json, size);
   //Serial.println(json);
-  StaticJsonBuffer<800> jsonBuffer;
-  JsonObject& root = jsonBuffer.parseObject(const_cast<char*>(json));
+  DynamicJsonBuffer jsonBuffer;
+  JsonObject& root = jsonBuffer.parseObject(result);
   if (!root.success()) {
     Serial.println("parseObject() failed");
-    return SETPOINT;
+    return "NC";
   }
-  const char* setPoint = root["result"][0]["SetPoint"];
-  Serial.println("    got " + String(setPoint));
+  const char* output = root["result"][0][fieldName];
+  Serial.println("    got " + String(output));
   oledPushMessage("Online");
-  return String(setPoint).toFloat();
+  return String(output);
 }
 
 
@@ -325,6 +325,7 @@ bool pushSetPoint() {
   client.stop();
   oledPushMessage("Online");
   delay(1);
+  return true;
 }
 
 bool pushTemperature() {
@@ -684,7 +685,7 @@ void setup() {
   oledPushMessage(WiFi.localIP().toString());
   drawWifilogo(getSsidQuality());
   Serial.println("WiFi Status : " + String(WiFi.status()));
-  SETPOINT = getSetPoint();  
+  SETPOINT = getDomoticzValue("SetPoint", THERMOSTAT_IDX).toFloat();  
   getSensorValues();
   handleThermostat();
   oledPushTemps(TEMPERATURE, SETPOINT);
@@ -701,7 +702,7 @@ unsigned long lastMsgDisplayTime = 0;
 void loop() {
     int plusState = digitalRead(PLUS_PIN);
     int minusState = digitalRead(MINUS_PIN);
-    
+    // input mode
     if (inputMode || plusState == HIGH || minusState == HIGH) { // the user is pushing the buttons      
         if (plusState == HIGH || minusState == HIGH) { // the buttons were pressed since the last loop
             inputMode = true;
@@ -722,158 +723,219 @@ void loop() {
             pushSetPoint();
             inputMode = false;
         }
-    } else { // idle mode
+    } 
+	// idle mode
+	else {
         WiFiClient client = server.available();
         if (client) {
-            String rawRequest = client.readStringUntil('\r');
-            String request = rawRequest;
-            request.remove(rawRequest.indexOf("HTTP/1.1"));
-            Serial.println("New Client Request : " + request);
-            IPAddress remote = client.remoteIP();
+			String response = "";
+			String requestToParse = "";
+			String method = "UNKNOWN";
+			bool faultyRequest = true;
+			bool body = false;
+			unsigned long now = millis();
+			while(client.connected()) {
+	            if(millis() - now > 5000) {
+	                faultyRequest = true;
+	                response += "client timeout";
+	                Serial.println("client timeout");
+	                break;
+	            }
+	            String requestPart = client.readStringUntil('\n');
+	            if(requestPart.indexOf("GET") != -1) {
+	                method = "GET";
+	            }
+	            if(requestPart.indexOf("POST") != -1) {
+	                method = "POST";
+	            }
+	            if(method == "POST") {
+	                if(body) {
+	                    requestToParse = requestPart;
+	                    break;
+	                }
+	                if(requestPart == "\r") {
+	                    body = true;
+	                }
+	            }
+	            else if(method == "GET") {
+	                requestToParse = requestPart;
+	                requestToParse.remove(requestPart.indexOf("HTTP/1.1"));
+	                break;
+	            }
+	            else {
+	                response += "Unsupported method";
+	                break;
+	            }
+	        }
+
             // send a standard http response header
             client.println("HTTP/1.1 200 OK ");
             client.println("Content-Type: text/html");
             client.println("Connection: close");  // the connection will be closed after completion of the response
             client.println();
-            String html_response = ("<!DOCTYPE HTML>");
-            html_response += ("<html>");
+			
+			if(method != "UNKNOWN") {
             // Check method
             // If post, set variables
-            if(checkHttpRequestParam(request, "POST")) {
-                Serial.println("POST request type");
-                bool faltyRequest = true;
-                // Check command
-                // if setpoint
-                if(checkHttpRequestParam(request, "setpoint")) {
-                    faltyRequest = false;
-                    String setpointStr = getHttpRequestParamValue(request, "setpoint");
-                    SETPOINT = setpointStr.toFloat();
-                    //eepromWriteFloat(eeAddress, SETPOINT);
-                    Serial.println("New Setpoint : " + setpointStr);
-                    html_response += "New setpoint " + String(DOMOTICZ_PORT)+ " °C set<br>";
-                }
-				// if setServerIp
-                if(checkHttpRequestParam(request, "setServerIp")) {
-                    // Set ServerIp
-                    DOMOTICZ_IP_ADDRESS_STR  = getHttpRequestParamValue(request, "setServerIp");
-                    faltyRequest = false;                 
-                    Serial.println("IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + " set");
-                    html_response += "ip " + String(DOMOTICZ_IP_ADDRESS_STR)+ " set<br>";
-                    saveServerIp(DOMOTICZ_IP_ADDRESS_STR, eeAddress);
-                }
-                // if setServerPort
-                if(checkHttpRequestParam(request, "setServerPort")) {
-                    // Set ServerPort
-                    String port = getHttpRequestParamValue(request, "setServerPort");
-                    DOMOTICZ_PORT = port.toInt();
-                    faltyRequest = false;                 
-                    Serial.println("PORT : " + String(DOMOTICZ_PORT));
-                    html_response += "port " + String(DOMOTICZ_PORT)+ " set<br>";
-                    saveServerPort(DOMOTICZ_PORT, eeAddress);
-                }
-                // if setSensorTimeout
-                if(checkHttpRequestParam(request, "setSensorTimeout")) {
-                    // Set ServerIP
-                    String sensorTimout = getHttpRequestParamValue(request, "setSensorTimeout");
-                    SENSOR_TIMEOUT = sensorTimout.toInt();
-                    SENSOR_TIMEOUT_MS = SENSOR_TIMEOUT * 1000;
-                    faltyRequest = false;                 
-                    Serial.println("SENSOR_TIMEOUT : " + String(SENSOR_TIMEOUT));
-                    html_response += "Sensor timeout " + String(SENSOR_TIMEOUT) + "s set<br><br>";
-                    saveSensorTimeout(SENSOR_TIMEOUT, eeAddress);
-                }
-				// If one of idx
-				if(checkHttpRequestParam(request, "setThermostatSetpointIdx")) {
-					faltyRequest = false;
-					THERMOSTAT_IDX = getHttpRequestParamValue(request, "setThermostatSetpointIdx").toInt();
-                    Serial.println("THERMOSTAT_IDX : " + String(THERMOSTAT_IDX));
-                    html_response += "thermostat_idx " + String(THERMOSTAT_IDX)+ " set<br>";
-					saveThermostatSetpointIDX(THERMOSTAT_IDX, eeAddress);
-				}
-				if(checkHttpRequestParam(request, "setHeaterSwitchIdx")) {
-					faltyRequest = false;
-					HEATER_SWITCH_IDX = getHttpRequestParamValue(request, "setHeaterSwitchIdx").toInt();
-                    Serial.println("HEATER_SWITCH_IDX : " + String(HEATER_SWITCH_IDX));
-                    html_response += "heaterSwitch_idx " + String(HEATER_SWITCH_IDX)+ " set<br>";
-					saveHeaterSwitchIDX(HEATER_SWITCH_IDX, eeAddress);
-				}
-				if(checkHttpRequestParam(request, "setTempSensorIdx")) {
-					faltyRequest = false;
-					TEMPSENSOR_IDX = getHttpRequestParamValue(request, "setTempSensorIdx").toInt();
-                    Serial.println("THERMOSTAT_IDX : " + String(TEMPSENSOR_IDX));
-                    html_response += "tempSensor_idx " + String(TEMPSENSOR_IDX)+ " set<br>";
-					saveTempSensorIDX(TEMPSENSOR_IDX, eeAddress);
-				}
-                // if httpUpdate
-                if(checkHttpRequestParam(request, "httpUpdate")) {
-                    faltyRequest = false;
-                    // Respond to client
-                    String binPath = getHttpRequestParamValue(request, "httpUpdate");
-					unsigned int firstDotsIndex = binPath.indexOf(":");
-					unsigned int firstSlashIndex = binPath.indexOf("/");
-					String httpUpdateIp   = binPath.substring(0, firstDotsIndex);
-					String httpUpdatePort = binPath.substring(firstDotsIndex + 1, firstSlashIndex);
-					String httpUpdatePath = binPath.substring(firstSlashIndex);
-					html_response += "httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath + "<br>";
-                    Serial.println("httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath);
+	            if(method == "POST") {
+	                Serial.println("POST request type");
+	                // Check command
+	                // if setpoint
+	                if(checkHttpRequestParam(requestToParse, "setpoint")) {
+	                    faultyRequest = false;
+	                    String setpointStr = getHttpRequestParamValue(requestToParse, "setpoint");
+	                    SETPOINT = setpointStr.toFloat();
+	                    //eepromWriteFloat(eeAddress, SETPOINT);
+	                    Serial.println("New Setpoint : " + setpointStr);
+	                    response += "New setpoint " + String(DOMOTICZ_PORT)+ " °C set<br>";
+	                }
+					// if setServerIp
+	                if(checkHttpRequestParam(requestToParse, "serverIp")) {
+	                    // Set ServerIp
+	                    DOMOTICZ_IP_ADDRESS_STR  = getHttpRequestParamValue(requestToParse, "serverIp");
+	                    faultyRequest = false;                 
+	                    Serial.println("IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + " set");
+	                    response += "ip " + String(DOMOTICZ_IP_ADDRESS_STR)+ " set<br>";
+	                    saveServerIp(DOMOTICZ_IP_ADDRESS_STR, eeAddress);
+	                }
+	                // if setServerPort
+	                if(checkHttpRequestParam(requestToParse, "serverPort")) {
+	                    // Set ServerPort
+	                    String port = getHttpRequestParamValue(requestToParse, "serverPort");
+	                    DOMOTICZ_PORT = port.toInt();
+	                    faultyRequest = false;                 
+	                    Serial.println("PORT : " + String(DOMOTICZ_PORT));
+	                    response += "port " + String(DOMOTICZ_PORT)+ " set<br>";
+	                    saveServerPort(DOMOTICZ_PORT, eeAddress);
+	                }
+	                // if setSensorTimeout
+	                if(checkHttpRequestParam(requestToParse, "sensorTimeout")) {
+	                    // Set ServerIP
+	                    String sensorTimout = getHttpRequestParamValue(requestToParse, "sensorTimeout");
+	                    SENSOR_TIMEOUT = sensorTimout.toInt();
+	                    SENSOR_TIMEOUT_MS = SENSOR_TIMEOUT * 1000;
+	                    faultyRequest = false;                 
+	                    Serial.println("SENSOR_TIMEOUT : " + String(SENSOR_TIMEOUT));
+	                    response += "Sensor timeout " + String(SENSOR_TIMEOUT) + "s set<br><br>";
+	                    saveSensorTimeout(SENSOR_TIMEOUT, eeAddress);
+	                }
+					// If one of idx
+					if(checkHttpRequestParam(requestToParse, "thermostatSetpointIdx")) {
+						faultyRequest = false;
+						THERMOSTAT_IDX = getHttpRequestParamValue(requestToParse, "thermostatSetpointIdx").toInt();
+	                    Serial.println("THERMOSTAT_IDX : " + String(THERMOSTAT_IDX));
+	                    response += "thermostat_idx " + String(THERMOSTAT_IDX)+ " set<br>";
+						saveThermostatSetpointIDX(THERMOSTAT_IDX, eeAddress);
+					}
+					if(checkHttpRequestParam(requestToParse, "heaterSwitchIdx")) {
+						faultyRequest = false;
+						HEATER_SWITCH_IDX = getHttpRequestParamValue(requestToParse, "heaterSwitchIdx").toInt();
+	                    Serial.println("HEATER_SWITCH_IDX : " + String(HEATER_SWITCH_IDX));
+	                    response += "heaterSwitch_idx " + String(HEATER_SWITCH_IDX)+ " set<br>";
+						saveHeaterSwitchIDX(HEATER_SWITCH_IDX, eeAddress);
+					}
+					if(checkHttpRequestParam(requestToParse, "tempSensorIdx")) {
+						faultyRequest = false;
+						TEMPSENSOR_IDX = getHttpRequestParamValue(requestToParse, "tempSensorIdx").toInt();
+	                    Serial.println("THERMOSTAT_IDX : " + String(TEMPSENSOR_IDX));
+	                    response += "tempSensor_idx " + String(TEMPSENSOR_IDX)+ " set<br>";
+						saveTempSensorIDX(TEMPSENSOR_IDX, eeAddress);
+					}
+	                // if httpUpdate
+	                if(checkHttpRequestParam(requestToParse, "httpUpdate")) {
+	                    faultyRequest = false;
+	                    // Respond to client
+	                    String binPath = getHttpRequestParamValue(requestToParse, "httpUpdate");
+						unsigned int firstDotsIndex = binPath.indexOf(":");
+						unsigned int firstSlashIndex = binPath.indexOf("/");
+						String httpUpdateIp   = binPath.substring(0, firstDotsIndex);
+						String httpUpdatePort = binPath.substring(firstDotsIndex + 1, firstSlashIndex);
+						String httpUpdatePath = binPath.substring(firstSlashIndex);
+						response += "httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath + "<br>";
+	                    Serial.println("httpUpdate toggled, path : " + httpUpdateIp + ":" + httpUpdatePort + httpUpdatePath);
 					
-					// Fetch the new bin to flash
-                    t_httpUpdate_return ret = ESPhttpUpdate.update(httpUpdateIp, httpUpdatePort.toInt(), httpUpdatePath);
-                    delay(1000);
-                    switch(ret) {
-                        case HTTP_UPDATE_FAILED:
-                            html_response += "[update] Update failed<br>";
-							html_response += "Error" + String(ESPhttpUpdate.getLastError())  + ESPhttpUpdate.getLastErrorString().c_str() + "<br>";
-                            Serial.println("[update] Update failed.");
-                            Serial.println("Error" + String(ESPhttpUpdate.getLastError())  + ESPhttpUpdate.getLastErrorString().c_str());
-                        break;
-                        case HTTP_UPDATE_NO_UPDATES:
-                            html_response += "    [update] Update no Update<br>";
-                            Serial.println("[update] Update no Update.");
-                        break;
-                    }
-                }
-                // if unknown request
-                if (faltyRequest == true) {
-                    html_response += "Request Error : variable to set unknown<br>";
-                    Serial.println("Request Error : variable to set unauthorized");
-                }
-            }
-            else if(checkHttpRequestParam(request, "GET")) {
-                Serial.println("GET request type");
-                if(checkHttpRequestParam(request, "ping")) {
-                    html_response += "Pong :-)<br>Toggling setpoint fetch, handle thermostat and pushHeaterStatus<br>";
-                }
-                if(checkHttpRequestParam(request, "whoAreYou")) {
-                    html_response += "<br>I am a domoticz thermostat<br>";
-                    html_response += "Current data :<br>Server IP : " + String(DOMOTICZ_IP_ADDRESS_STR) + "<br>";
-                    html_response += "<br>Server port : " + String(DOMOTICZ_PORT) + "<br>";
-                    html_response += "<br>Sensor timeout : " + String(SENSOR_TIMEOUT) + "<br>";
-                    html_response += "<br>Temperature:" + String(TEMPERATURE) + "C<br>";
-                    html_response += "<br>Setpoint:" + String(SETPOINT) + "C<br>";
-                    html_response += "<br>Heater Status:" + String(heating) + "<br>";
-                    html_response += "<br>RSSI : " + String(getSsidQuality()) + "%<br>";
-					html_response += "<br>";
-					html_response += "<br>Thermostat SetPoint IDX : " + String(THERMOSTAT_IDX);
-					html_response += "<br>Heater IDX : " + String(HEATER_SWITCH_IDX);
-					html_response += "<br>TempSensor IDX : " + String(TEMPSENSOR_IDX);
-                }
-            }
-            html_response += "\n</html>\n";
-            client.print(html_response);
-            client.println();
-            client.flush();
-            client.stop();
-            Serial.println("Client disonnected");
-            delay(500);
-            SETPOINT = getSetPoint();
-            handleThermostat();
-            pushHeaterStatus();
-            oledPushTemps(TEMPERATURE, SETPOINT);
-            oledDrawTimeToNextSend();
-        }
-
-        
+						// Fetch the new bin to flash
+	                    t_httpUpdate_return ret = ESPhttpUpdate.update(httpUpdateIp, httpUpdatePort.toInt(), httpUpdatePath);
+	                    delay(1000);
+	                    switch(ret) {
+	                        case HTTP_UPDATE_FAILED:
+	                            response += "[update] Update failed<br>";
+								response += "Error" + String(ESPhttpUpdate.getLastError())  + ESPhttpUpdate.getLastErrorString().c_str() + "<br>";
+	                            Serial.println("[update] Update failed.");
+	                            Serial.println("Error" + String(ESPhttpUpdate.getLastError())  + ESPhttpUpdate.getLastErrorString().c_str());
+	                        break;
+	                        case HTTP_UPDATE_NO_UPDATES:
+	                            response += "[update] Update no Update<br>";
+	                            Serial.println("[update] Update no Update.");
+	                        break;
+	                    }
+	                }
+	                // if unknown request
+	                if (faultyRequest == true) {
+	                    response += "Request Error : variable to set unknown<br>";
+	                    Serial.println("Request Error : variable to set unknown");
+	                }
+	            }
+	            else if(method == "GET") {
+	                Serial.println("GET request type");
+	                if(checkHttpRequestParam(requestToParse, "ping")) {
+	                    response += "Pong :-) Toggling setpoint fetch, handle thermostat and pushHeaterStatus<br>";
+	                }
+	                if(checkHttpRequestParam(requestToParse, "whoAreYou")) {
+						String domoticzHeaterSwitchName = getDomoticzValue("Name",HEATER_SWITCH_IDX);
+						String domoticzTempSensorName = getDomoticzValue("Name", TEMPSENSOR_IDX);
+						String domoticzSetpointName = getDomoticzValue("Name", THERMOSTAT_IDX);
+	                    response += "<br>I am a domoticz thermostat";
+	                    response += "<br>Server IP : " + String(DOMOTICZ_IP_ADDRESS_STR);
+	                    response += "<br>Server port : " + String(DOMOTICZ_PORT);
+						response += "<br>Thermostat SetPoint idx (Domoticz) : " + String(THERMOSTAT_IDX) + " (" + domoticzSetpointName + ") in Domoticz";
+						response += "<br>Heater idx (Domoticz) : " + String(HEATER_SWITCH_IDX) + " (" + domoticzHeaterSwitchName + ") in Domoticz";
+						response += "<br>TempSensor idx (Domoticz) : " + String(TEMPSENSOR_IDX) + " (" + domoticzTempSensorName + ") in Domoticz";
+	                    response += "<br>Sensor timeout : " + String(SENSOR_TIMEOUT);
+	                    response += "<br>Temperature:" + String(TEMPERATURE);
+	                    response += "<br>Setpoint : " + String(SETPOINT);
+	                    response += "<br>Heater Status : " + String(heating);
+						response += "<br>Wifi network ssid : " + WiFi.SSID();
+	                    response += "<br>RSSI : " + String(getSsidQuality()) + "%";
+						response += "<br>MAC ADDRESS : " + WiFi.macAddress();
+						response += "<br>";
+	                    response += "<br>POST settable variables :";
+	                    response += "<br>    tempSensorIdx  : set matching domoticz device's idx";
+						response += "<br>    heaterSwitchIdx  : set matching domoticz device's idx";
+						response += "<br>    thermostatSetpointIdx  : set matching domoticz device's idx";
+	                    response += "<br>    serverIp       : set domoticz server ip";
+	                    response += "<br>    serverPort : set domoticz server port";
+	                    response += "<br>    sensorTimeout  : time between two sensor sendings";
+	                    response += "<br>    httpUpdate : url of binary to flash [IP_ADDRESS:PORT/PATH/TO/FILE.BIN]";
+	                    response += "<br>                   ";
+	                    response += "<br>GET requests :";
+	                    response += "<br>    /ping          : raises the sensor, send value to domoticz";
+	                    response += "<br>    /whoAreYou : display this menu";
+						
+	                }
+	            }
+				
+				// Get variables and respond to client in both cases POST and GET
+	            client.print("HTTP/1.1 200 OK\r\nContent-Type: text/html\r\n\r\n<!DOCTYPE HTML>\r\n<html>\r\n");
+	            client.print(response);
+	            client.print("\n</html>\n");
+	            client.println();
+				client.println();
+	            client.stop();
+	            Serial.println("Client disonnected");
+	            delay(500);
+				getSensorValues();
+	            SETPOINT = getDomoticzValue("SetPoint", THERMOSTAT_IDX).toFloat();
+	            handleThermostat();
+	            pushHeaterStatus();
+	            oledPushTemps(TEMPERATURE, SETPOINT);
+	            oledDrawTimeToNextSend();
+	        }
+	        else {
+	            client.print("HTTP/1.1 400 " + response + "\r\n");
+	            client.stop();
+	        }
+		}
         else if (isIntervalElapsed(SENSOR_TIMEOUT_MS, lastSensorSendTime)) {
             oledDrawTimeToNextSend();
             if(getSensorValues()) {
@@ -888,7 +950,7 @@ void loop() {
             if(WiFi.status() == WL_CONNECTED) {
                 drawWifilogo(getSsidQuality());
                 Serial.println("Wifi Ok, trying to send to server...");
-                SETPOINT = getSetPoint();
+                SETPOINT = getDomoticzValue("SetPoint", THERMOSTAT_IDX).toFloat();
                 pushHeaterStatus();
                 pushTemperature();
                 lastSensorSendTime = millis();
