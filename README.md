@@ -42,7 +42,17 @@ Note the idx of each sensor.
 You are now ready to follow up to the hardware setup!
 
 ### Step 2 : connect the device to WiFi
-This step is the same for all the devices. Just plug it to a current source and wait a few seconds. If the device find a known wifi SSID it will try to connect to with the credentials saved in EEPROM. If not, or if there are no credentials saved, it will create a WiFi network named _autoconnectAP_. You can use a smartphone or a laptop to connect to. Then, go to the url _192.168.4.1_ and configure your WiFi connection. Easy!
+This step is the same for all the devices. Just plug it to a current source and wait a few seconds. If the device finds a known wifi SSID it will try to connect to with the credentials saved in EEPROM. If not, or if there are no credentials saved, it will create a WiFi network named _autoconnectAP_. You can use a smartphone or a laptop to connect to. Then, go to the url _192.168.4.1_ and configure your WiFi connection. Easy!
 
 ### Step 3 : configure the  device by sending http requests
-By design, the way to configure the devices is by sending requests. If you use a linux server (Raspberry Pi) or a Mac, _curl_ is an easy way. __The devices run a server that listen on port 8081__.
+By design, the way to configure the devices is http requests. If you use a linux server (Raspberry Pi) or a Mac, _curl_ is an easy way. __The devices run a server that listen on port 8081__. To begin configuration, you need the IP address the device. Figure it out through your router admin page.
+GET requests :
+
+* read the settings of the device
+'''sh
+curl "192.168.XXX.X:8081/whAreYou"
+'''
+* toggle the sensor and make it send its data to domoticz
+'''sh
+curl "192.168.XXX.X:8081/ping"
+'''
