@@ -57,8 +57,8 @@ or with web browser:
 _192.168.XXX.X:8081/whoAreYou_
 
 Here is a response example for the thermostat:
-```sh {
-I am a domoticz thermostat
+```sh
+{I am a domoticz thermostat
 Server IP : 192.168.0.99
 Server port : 8081
 Thermostat SetPoint idx (Domoticz) : 1 (Consigne Thermostat) in Domoticz
@@ -83,7 +83,7 @@ httpUpdate : url of binary to flash [IP_ADDRESS:PORT/PATH/TO/FILE.BIN]
 
 GET requests :
 /ping : raises the sensor, send value to domoticz
-/whoAreYou : display this menu }
+/whoAreYou : display this menu}
 ```
 
 * toggle the sensor and make it send its data to domoticz
