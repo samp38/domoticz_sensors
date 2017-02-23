@@ -224,6 +224,31 @@ String getDomoticzValue(String fieldName, unsigned int idx) {
   return String(output);
 }
 
+bool pushSwitchStatus() {
+    WiFiClient client;
+    client.setNoDelay(true);
+    Serial.println("Pushing temperature...");
+    if (!client.connect(DOMOTICZ_IP_ADDRESS, DOMOTICZ_PORT)) {
+        Serial.println("Fail to contact server");
+        client.stop();
+        return false;
+    }
+    //Serial.print("POSTING data to URL...");
+    client.print("GET /json.htm?type=command&param=switchlight&idx="+String(SWITCH_IDX)+"&switchcmd=");
+    // client.print("GET /json.htm?type=command&param=udevice&idx="+String(SWITCH_IDX)+"&nvalue=0&svalue=");
+    client.print( switchStatus ? "On" : "Off" );
+    client.println( " HTTP/1.1");
+    client.print( "Host: " );
+    client.println(DOMOTICZ_IP_ADDRESS_STR);
+    client.println( "Connection: close" );  
+    client.println();
+    client.println();
+    Serial.println("Done");
+    client.stop();
+    delay(1);
+    return true;
+}
+
 String getHttpRequestParamValue(String input_str, String param) {
       int param_index = input_str.indexOf(param);
       if(param_index == -1) {return "\0";}
@@ -261,13 +286,6 @@ void setup() {
   Serial.println("Quality : " + String(getSsidQuality()) + "%");
   lastSensorSendTime = millis();
   Serial.println("WiFi Status : " + String(WiFi.status()));
-  
-  // Added for sleepy
-  // pushTemperature();
-  // Serial.println("Going to sleep for " + String(5 * SENSOR_TIMEOUT) + "S");
-  // ESP.deepSleep(5 * SENSOR_TIMEOUT * 1000000);
-  // delay(100);
-  // Added for sleepy
 }
 
 //###################################################################################### LOOP
@@ -413,7 +431,7 @@ void loop() {
                     response += "Switch Idx (Domoticz) : " + String(SWITCH_IDX) + "<br>";
                     response += "Sensor Name (Domoticz) : " + domoticzDeviceName + "<br>";
                     response += "Sensor timeout : " + String(SENSOR_TIMEOUT) + "s<br>";
-                    response += "Switch status : " + String(switchStatus) + "C<br>";
+                    response += "Switch status : " + String(switchStatus ? "On" : "Off") + "<br>";
                     response += "Wifi network ssid : " + WiFi.SSID() + "<br>";
                     response += "RSSI : " + String(getSsidQuality()) + "%<br>";
                     response += "MAC ADDRESS : " + WiFi.macAddress();
@@ -465,5 +483,6 @@ void loop() {
     lastSensorSendTime = millis();
     }
 }
+
 
 
