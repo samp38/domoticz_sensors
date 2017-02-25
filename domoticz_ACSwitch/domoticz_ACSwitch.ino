@@ -267,15 +267,15 @@ bool pushSwitchStatus() {
     client.println();
     client.println();
 	delay(200);
-	unsigned long now = millis();
+	unsigned long _now_ = millis();
 	bool ack = false;
-	while(client.available()) {
+	while(client.connected()) {
 		String line = client.readStringUntil('\r');
 		if(line.indexOf("OK") != -1) {
 			ack = true;
 			break;
 		}
-		if(millis() - now > 5000) {
+		if(millis() - _now_ > 5000) {
 			break;
 		}
 	}
