@@ -33,12 +33,13 @@ unsigned int ledStatus = 0;
 unsigned int ledNormalIntensity = 15;
 unsigned int ledAlertIntensity = 200;
 
+
 String DOMOTICZ_IP_ADDRESS_STR = "000.000.000.000";
 int SENSOR_TIMEOUT_MS = 0;
 int eeAddress = 500;
 String LOCALIP = "";
-
 WiFiServer server(8081);
+unsigned int faultyServerDataTrades = 0;
 
 bool isIntervalElapsed(unsigned long interval, unsigned long referenceTime) {
   return (unsigned long)(millis() - referenceTime) >= interval;
@@ -123,6 +124,11 @@ void saveSensorTimeout(int timeout, int address) {
     Serial.println("SAVING SENSOR TIMOUT TO EEPROM : " + String(SENSOR_TIMEOUT) + " S");
 }
 
+// save Domoticz password in eeprom. Max 20 characters
+void saveDomoticzPassword(String password, int address) {
+	//TODO
+}
+
 void readSettingsFromEEPROM(int address) {
     byte port_lsb = 0;
     byte port_msb = 0;
@@ -167,31 +173,36 @@ void readSettingsFromEEPROM(int address) {
 
 void toggleSwitch(bool ON) {
     if (ON == true) {
+		Serial.println("## SWITCH ON ##");
         pinMode(PIN_RELAY, OUTPUT);
         digitalWrite(PIN_RELAY, LOW);
         switchStatus = true;
     }
     else {
+		Serial.println("## SWITCH OFF ##");
         pinMode(PIN_RELAY, INPUT);
         switchStatus = false;
     }
 }
 
-void handleLedStatus(String status) {
+void handleDomoticzSwitchStatus(String status) {
 	uint32_t color = statusLed.Color(0, 0, 0);
 	if(status == "On"){
 		toggleSwitch(true);
 		color = statusLed.Color(0, 255, 0);
 		statusLed.setBrightness(ledNormalIntensity);
+		faultyServerDataTrades = 0;
 	}
 	else if(status == "Off") {
 		toggleSwitch(false);
 		color = statusLed.Color(255, 0, 0);
 		statusLed.setBrightness(ledNormalIntensity);
+		faultyServerDataTrades = 0;
 	}
 	else {
-		statusLed.setBrightness(ledAlertIntensity);
-		color = statusLed.Color(255, 255, 0);
+		// statusLed.setBrightness(ledAlertIntensity);
+		// color = statusLed.Color(255, 255, 0);
+		faultyServerDataTrades += 1;
 	}
     statusLed.setPixelColor(0, color);
     statusLed.show();
@@ -266,16 +277,16 @@ bool pushSwitchStatus() {
     client.println( "Connection: close" );  
     client.println();
     client.println();
-	delay(200);
+	delay(500);
 	unsigned long _now_ = millis();
 	bool ack = false;
 	while(client.connected()) {
 		String line = client.readStringUntil('\r');
-		if(line.indexOf("OK") != -1) {
+		if(line.indexOf("\"status\" : \"OK\"") != -1) {
 			ack = true;
 			break;
 		}
-		if(millis() - _now_ > 5000) {
+		if(millis() - _now_ > 10000) {
 			break;
 		}
 	}
@@ -334,7 +345,7 @@ void setup() {
   Serial.println("Quality : " + String(getSsidQuality()) + "%");
   Serial.println("WiFi Status : " + String(WiFi.status()));
   String domoticzStatus = getDomoticzValue("Status", SWITCH_IDX);
-  handleLedStatus(domoticzStatus);
+  handleDomoticzSwitchStatus(domoticzStatus);
   lastSensorSendTime = millis() - SENSOR_TIMEOUT_MS + 5;
 }
 
@@ -465,7 +476,7 @@ void loop() {
                 if(checkHttpRequestParam(requestToParse, "ping")) {
                     response += "Toggling switch status fetch<br>";
 		            String domoticzStatus = getDomoticzValue("Status", SWITCH_IDX);
-					handleLedStatus(domoticzStatus);
+					handleDomoticzSwitchStatus(domoticzStatus);
 					lastSensorSendTime = millis();
                 }
                 if(checkHttpRequestParam(requestToParse, "whoAreYou")) {
@@ -512,35 +523,33 @@ void loop() {
         }
     }
     else if (isIntervalElapsed(SENSOR_TIMEOUT_MS, lastSensorSendTime)) {
+		// If WiFi is ok
         if(WiFi.status() == WL_CONNECTED) {
             Serial.println("Wifi Ok, trying to send status to server...");
 			// push status to Domoticz
 		    uint32_t color = statusLed.Color(0, 0, 0);
+			
+			// Normal mode, push state to Domoticz
+			Serial.println("   normal mode");
 			if(pushSwitchStatus()) {
-				statusLed.setBrightness(ledNormalIntensity);
-				if(switchStatus == true) {
-					color = statusLed.Color(0, 255, 0);
-				}
-				else {
-					color = statusLed.Color(255, 0, 0);
-				}
+				faultyServerDataTrades = 0;
 			}
 			else {
+				faultyServerDataTrades += 1;
+			}
+						
+			// If get or push succeeds, faultyServerDataTrades is set to zero
+			// But in case of multiple failures :
+			if(faultyServerDataTrades > 2) {
+				Serial.println("FAULTY MODE : OFF");
 				toggleSwitch(false);
 				statusLed.setBrightness(ledAlertIntensity);
 				color = statusLed.Color(255, 255, 0);
+			    statusLed.setPixelColor(0, color);
+			    statusLed.show();
 			}
-		    statusLed.setPixelColor(0, color);
-		    statusLed.show();
 		}
-            // String domoticzStatus = getDomoticzValue("Status", SWITCH_IDX);
-// 			if(domoticzStatus == "On"){
-// 				toggleSwitch(true);
-// 			}
-// 			else {
-// 				toggleSwitch(false);
-// 			}
-//         }
+		// If no WiFi
         else {
             Serial.println("No Wifi, aborting send to server");
 			toggleSwitch(false);
